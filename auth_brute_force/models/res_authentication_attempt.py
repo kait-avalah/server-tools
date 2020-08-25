@@ -4,7 +4,7 @@
 
 import json
 import logging
-from urllib2 import urlopen
+from urllib.request import urlopen
 from odoo import api, fields, models
 
 GEOLOCALISATION_URL = u"http://ip-api.com/json/{}"
@@ -15,6 +15,7 @@ _logger = logging.getLogger(__name__)
 class ResAuthenticationAttempt(models.Model):
     _name = 'res.authentication.attempt'
     _order = 'create_date desc'
+    _description = 'Authentication Attempt'
 
     login = fields.Char(string='Tried Login', index=True)
     remote = fields.Char(string='Remote IP', index=True)
@@ -36,7 +37,6 @@ class ResAuthenticationAttempt(models.Model):
         compute="_compute_whitelisted",
     )
 
-    @api.multi
     @api.depends('remote')
     def _compute_metadata(self):
         for item in self:
@@ -53,7 +53,6 @@ class ResAuthenticationAttempt(models.Model):
                 item.remote_metadata = "\n".join(
                     '%s: %s' % pair for pair in res.items())
 
-    @api.multi
     def _compute_whitelisted(self):
         whitelist = self._whitelist_remotes()
         for one in self:
@@ -150,7 +149,6 @@ class ResAuthenticationAttempt(models.Model):
         )
         return set(whitelist.split(","))
 
-    @api.multi
     def action_whitelist_add(self):
         """Add current remotes to whitelist."""
         whitelist = self._whitelist_remotes()
@@ -160,7 +158,6 @@ class ResAuthenticationAttempt(models.Model):
             ",".join(whitelist),
         )
 
-    @api.multi
     def action_whitelist_remove(self):
         """Remove current remotes from whitelist."""
         whitelist = self._whitelist_remotes()

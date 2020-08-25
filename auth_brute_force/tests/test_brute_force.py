@@ -2,19 +2,16 @@
 # Copyright 2017 Tecnativa - Jairo Llopis
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from threading import current_thread
-from urllib import urlencode
+from urllib.parse import urlencode
 
-from decorator import decorator
 from mock import patch
-from werkzeug.utils import redirect
-
 from odoo import http
+from odoo.exceptions import AccessDenied
 from odoo.tests.common import at_install, HttpCase, post_install
 from odoo.tools import mute_logger
+from werkzeug.utils import redirect
 
 from ..models import res_authentication_attempt, res_users
-
 
 GARBAGE_LOGGERS = (
     "werkzeug",
@@ -23,32 +20,10 @@ GARBAGE_LOGGERS = (
 )
 
 
-# HACK https://github.com/odoo/odoo/pull/24833
-def skip_unless_addons_installed(*addons):
-    """Decorator to skip a test unless some addons are installed.
-
-    :param *str addons:
-        Addon names that should be installed.
-
-    :param reason:
-        Explain why you must skip this test.
-    """
-
-    @decorator
-    def _wrapper(method, self, *args, **kwargs):
-        installed = self.addons_installed(*addons)
-        if not installed:
-            missing = set(addons) - installed
-            self.skipTest("Required addons not installed: %s" %
-                          ",".join(sorted(missing)))
-        return method(self, *args, **kwargs)
-
-    return _wrapper
-
-
 def patch_cursor(func):
     """ Decorator that patches the current TestCursor for nested savepoint
     support """
+
     def acquire(cursor):
         cursor._depth += 1
         cursor._lock.acquire()
@@ -116,16 +91,7 @@ def patch_cursor(func):
 class BruteForceCase(HttpCase):
     def setUp(self):
         super(BruteForceCase, self).setUp()
-        # Some tests could retain environ from last test and produce fake
-        # results without this patch
-        # HACK https://github.com/odoo/odoo/issues/24183
-        # TODO Remove in v12
-        try:
-            del current_thread().environ
-        except AttributeError:
-            pass
-        # Complex password to avoid conflicts with `password_security`
-        self.good_password = "Admin$%02584"
+        self.good_password = "admin"  # default password set up by demo db
         self.data_demo = {
             "login": "demo",
             "password": "Demo%&/(908409**",
@@ -153,7 +119,6 @@ class BruteForceCase(HttpCase):
         ])
         return set(addons) - set(found.mapped("name"))
 
-    @skip_unless_addons_installed("web")
     @mute_logger(*GARBAGE_LOGGERS)
     @patch_cursor
     def test_web_login_existing(self, *args):
@@ -223,7 +188,6 @@ class BruteForceCase(HttpCase):
         response = self.url_open("/web/login", bytes(urlencode(data1)), 30)
         self.assertTrue(response.geturl().endswith("/web"))
 
-    @skip_unless_addons_installed("web")
     @mute_logger(*GARBAGE_LOGGERS)
     @patch_cursor
     def test_web_login_unexisting(self, *args):
@@ -405,10 +369,9 @@ class BruteForceCase(HttpCase):
         with self.cursor() as cr:
             env = self.env(cr)
             # Fail 3 times
+            auth_args = [cr.dbname, data1["login"], data1["password"], {}]
             for n in range(3):
-                self.assertFalse(
-                    env["res.users"].authenticate(
-                        cr.dbname, data1["login"], data1["password"], {}))
+                self.assertRaises(AccessDenied, env["res.users"].authenticate, *auth_args)
             self.assertEqual(
                 env["res.authentication.attempt"].search(count=True, args=[]),
                 0,
@@ -434,11 +397,10 @@ class BruteForceCase(HttpCase):
         }
         with self.cursor() as cr:
             env = self.env(cr)
+            auth_args = [cr.dbname, data1["login"], data1["password"], {}]
             # Fail 3 times
             for n in range(3):
-                self.assertFalse(
-                    env["res.users"].authenticate(
-                        cr.dbname, data1["login"], data1["password"], {}))
+                self.assertRaises(AccessDenied, env["res.users"].authenticate, *auth_args)
             self.assertEqual(
                 env["res.authentication.attempt"].search(count=True, args=[]),
                 0,
